@@ -49,8 +49,8 @@ func ExtractOriginalRequestPath(rw http.ResponseWriter, r *http.Request) {
 	original_request_path := r.RequestURI
 	logger.Info("Original RequestURI:  ", original_request_path)
 
-	// Store the original request path in redis with TTL of 120sec
-	err := store.SetKey("original_request_path", original_request_path, 120)
+	// Store the original request path in redis with TTL of 10sec
+	err := store.SetKey("original_request_path", original_request_path, 10)
 	if err != nil {
 		logger.Info("There's an error storing key to redis", err)
 		return
