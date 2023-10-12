@@ -10,41 +10,21 @@ import (
 	"github.com/TykTechnologies/tyk/storage"
 )
 
+// Global redis variables
+var conf config.Config
+var rc *storage.RedisController
+var store storage.RedisCluster
+
+// this is set based on the other plugin that sets request path
+const pluginKeyPrefix = "extract-og-rPath-plugin-"
+
 var logger = log.Get()
 
 func ModifyAnalyticsRequestPath(record *analytics.AnalyticsRecord) {
-	logger.Info("Processing Analytics Golang plugin")
+	logger.Info("Plugin: Modify Analytics Request Path")
 
-	// Create key prefix from api name
-	keyprefix := record.APIName + "-"
-
-	// Get the global config - it's needed in various places
-	conf := config.Global()
-
-	// Create a Redis Controller, which will handle the Redis connection for the storage
-	rc := storage.NewRedisController(context.Background())
-
-	// Create a storage object, which will handle Redis operations using key keyprefix
-	store := storage.RedisCluster{KeyPrefix: keyprefix, RedisController: rc}
-
-	go rc.ConnectToRedis(context.Background(), nil, &conf)
-	for i := 0; i < 10; i++ { // max 10 attempts - should only take 3
-		if rc.Connected() {
-			logger.Info("Redis Controller connected")
-			break
-		}
-		logger.Warn("Redis Controller not connected, will retry")
-
-		time.Sleep(10 * time.Millisecond)
-	}
-
-	if !rc.Connected() {
-		logger.Error("Could not connect to storage")
-		return
-	}
-
-	// Get original request path from Redis
-	original_request_path, err := store.GetKey("original_request_path")
+	// Get original request path from Redis using API name
+	original_request_path, err := store.GetKey(record.APIName)
 	if err != nil {
 		logger.Info("There's an error getting key from redis", err)
 		return
@@ -59,4 +39,38 @@ func ModifyAnalyticsRequestPath(record *analytics.AnalyticsRecord) {
 	record.RawPath += " rewritten from " + original_request_path
 
 }
+
+func establishRedisConnection() {
+	// Retrieve global configs
+	conf = config.Global()
+
+	// Create a Redis Controller, which will handle the Redis connection for the storage
+	rc = storage.NewRedisController(context.Background())
+
+	// Create a storage object, which will handle Redis operations using pluginKeyPrefix
+	store = storage.RedisCluster{KeyPrefix: pluginKeyPrefix, RedisController: rc}
+
+	// Perform Redis connection
+	go rc.ConnectToRedis(context.Background(), nil, &conf)
+	for i := 0; i < 10; i++ { // max 10 attempts - should only take 3
+		time.Sleep(10 * time.Millisecond)
+		if rc.Connected() {
+			logger.Info("Redis Controller connected")
+			break
+		}
+		logger.Warn("Redis Controller not connected, will retry")
+	}
+
+	// Error handling Redis connection
+	if !rc.Connected() {
+		logger.Error("Could not connect to storage")
+		panic("Plugin Couldn't establish a connection to redis")
+	}
+}
+
+func init() {
+	logger.Info("---- Establishing redis connection in Analytics plugin ----")
+	establishRedisConnection()
+}
+
 func main() {}
